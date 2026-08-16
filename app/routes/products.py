@@ -28,7 +28,7 @@ def create_product():
     product = Product(name=name, price=price, stock=stock)
     db.session.add(product)
     db.session.commit()
-    logger.info("Created product id=%s name=%s", product.id, product.name)
+    logger.info("Created product", extra={"product_id": product.id, "product_name": product.name})
 
     return jsonify(product.to_dict()), 201
 

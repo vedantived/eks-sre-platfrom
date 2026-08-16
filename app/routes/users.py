@@ -25,7 +25,7 @@ def create_user():
     user = User(name=name, email=email)
     db.session.add(user)
     db.session.commit()
-    logger.info("Created user id=%s email=%s", user.id, user.email)
+    logger.info("Created user", extra={"user_id": user.id, "email": user.email})
 
     return jsonify(user.to_dict()), 201
 

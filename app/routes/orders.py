@@ -23,11 +23,13 @@ def create_order_route():
 
     order = create_order(user_id=user_id, product_id=product_id, quantity=quantity)
     logger.info(
-        "Created order id=%s user_id=%s product_id=%s quantity=%s",
-        order.id,
-        order.user_id,
-        order.product_id,
-        order.quantity,
+        "Created order",
+        extra={
+            "order_id": order.id,
+            "user_id": order.user_id,
+            "product_id": order.product_id,
+            "quantity": order.quantity,
+        },
     )
 
     return jsonify(order.to_dict()), 201

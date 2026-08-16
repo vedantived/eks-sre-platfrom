@@ -1,12 +1,12 @@
 """Centralized error handling.
 
-Defines the application's typed exceptions and registers JSON error
+Defines the applications typed exceptions and registers JSON error
 handlers on the Flask app so every error path returns a consistent,
 client-safe JSON body instead of an HTML error page or a stack trace.
 """
 import logging
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -53,5 +53,8 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(error: Exception):
-        logger.exception("Unhandled exception while processing request")
+        logger.exception(
+            "Unhandled exception while processing request",
+            extra={"method": request.method, "path": request.path},
+        )
         return jsonify({"error": "Internal server error"}), 500

@@ -33,6 +33,8 @@ app/services/order_service.py  -> order creation business logic + DB transaction
 app/validation.py              -> reusable request validation helpers
 app/error_handlers.py          -> typed exceptions (ValidationError, NotFoundError,
                                    ConflictError) + centralized JSON error responses
+app/middleware.py              -> assigns/echoes a request id for every request
+app/logging_utils.py           -> JSON log formatting + request id correlation
 pytest.ini                     -> puts the project root on sys.path so plain `pytest` works
 ```
 
@@ -45,6 +47,46 @@ or tested independently.
 Because the database URL is fully driven by the `DATABASE_URL` environment
 variable, swapping SQLite for Amazon RDS in a later phase requires no
 application code changes.
+
+## Observability: Request IDs and JSON Logs
+
+Every request is assigned a unique **request id**, and every log line is
+emitted as a single-line **JSON object** rather than plain text. Together
+these make it possible to trace one request end to end even once this app
+is running as multiple pods on EKS with logs from every pod interleaved in
+a shared stream (e.g. shipped via Fluent Bit into ELK).
+
+How it works:
+
+- `app/middleware.py` assigns a request id to every incoming request
+  (`app.before_request`). If the caller supplies an `X-Request-ID` header,
+  that value is used as-is (useful when an upstream proxy already assigned
+  one); otherwise a new id is generated.
+- The same id is echoed back on the response as the `X-Request-ID` header.
+- `app/logging_utils.py` stamps that id onto every log line produced while
+  handling the request, and formats every log line as JSON.
+
+Example — creating a product with a caller-supplied request id:
+
+```bash
+curl -is -X POST http://127.0.0.1:5000/api/products \
+  -H "Content-Type: application/json" \
+  -H "X-Request-ID: my-custom-trace-id" \
+  -d '{"name": "Laptop", "price": 57800, "stock": 10}'
+```
+
+produces response header `X-Request-ID: my-custom-trace-id`, and every log
+line for that request carries the same id:
+
+```json
+{"timestamp": "2026-08-16T06:23:37.751102+00:00", "level": "INFO", "logger": "app", "message": "Incoming request", "request_id": "my-custom-trace-id", "method": "POST", "path": "/api/products"}
+{"timestamp": "2026-08-16T06:23:37.761265+00:00", "level": "INFO", "logger": "app.routes.products", "message": "Created product", "request_id": "my-custom-trace-id", "product_id": 2, "product_name": "Laptop"}
+{"timestamp": "2026-08-16T06:23:37.761463+00:00", "level": "INFO", "logger": "app", "message": "Completed request", "request_id": "my-custom-trace-id", "method": "POST", "path": "/api/products", "status": 201, "duration_ms": 10.36}
+```
+
+Filtering logs for `request_id: my-custom-trace-id` gives the complete
+story of that one request, regardless of how many other requests (or
+pods) are writing to the log stream at the same time.
 
 ## Development Environment
 
@@ -135,9 +177,11 @@ python run.py
 ```
 
 The API is served at `http://127.0.0.1:5000`. Keep this terminal open —
-it prints a live log line for every request it handles (method, path,
-status code, duration), which is useful for watching the app behave in
-real time and is the format later phases will ship to Fluent Bit / ELK.
+it prints a live JSON log line for every request it handles (method, path,
+status code, duration, request id — see
+[Observability](#observability-request-ids-and-json-logs) above), which is
+useful for watching the app behave in real time and is the format later
+phases will ship to Fluent Bit / ELK.
 
 To stop the server, press `Ctrl+C` in that terminal.
 
@@ -342,10 +386,10 @@ directory to Python's import path while a bare `pytest` invocation does not.
 
 ## Expected Test Result
 
-All 24 tests should pass:
+All 27 tests should pass:
 
 ```
-======================= 24 passed in 0.5s =======================
+======================= 27 passed in 0.5s =======================
 ```
 
 ## Troubleshooting
@@ -388,9 +432,10 @@ rm -rf .pytest_cache
    `{"error": "..."}` body (never an HTML error page).
 7. Creating an order with insufficient stock returns `400` and does **not**
    change the product's stock (i.e. the transaction rolled back correctly).
-8. The console log output is readable, one line per request, with method,
-   path, and status.
-9. `pytest -v` passes all 24 tests locally.
+8. The console log output is one JSON object per line, and every line for
+   a given request shares the same `request_id`.
+9. The response for every request includes an `X-Request-ID` header.
+10. `pytest -v` passes all 27 tests locally.
 
 Phase 1 is complete once all of the above are verified — and they have been.
 
@@ -424,4 +469,3 @@ The application code is intentionally structured (application factory,
 thin routes, isolated service layer, environment-driven config) so that
 future additions such as `/metrics`, `/load`, `/slow`, `/error`, and
 `/db-test` endpoints can be added cleanly later.
-# eks-sre-platfrom
