@@ -1,0 +1,12 @@
+venv/
+instance/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.git/
+.gitignore
+.env
+*.db
+*.sqlite
+*.sqlite3
+README.md

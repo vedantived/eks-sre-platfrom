@@ -11,10 +11,10 @@ later be containerized, deployed to AWS EKS, and used to demonstrate real
 SRE practices: metrics, dashboards, SLI/SLO, error budgets, alerting,
 autoscaling, load testing, failure injection, and incident response.
 
-This repository currently covers **Phase 1 only**: a working Flask backend
-running locally against SQLite, with a full test suite. No Docker,
-Kubernetes, Terraform, AWS, or CI/CD is included yet — those come in later
-phases (see [Future SRE Extensions](#future-sre-extensions) below).
+**Phase 1** (Flask backend, local SQLite, full test suite) is complete.
+**Phase 2** (Docker + AWS ECR + a manual EC2 deployment) is also complete.
+Kubernetes/EKS, Terraform, CI/CD, and the rest of the SRE tooling come in
+later phases (see [Future SRE Extensions](#future-sre-extensions) below).
 
 ## Architecture
 
@@ -36,6 +36,8 @@ app/error_handlers.py          -> typed exceptions (ValidationError, NotFoundErr
 app/middleware.py              -> assigns/echoes a request id for every request
 app/logging_utils.py           -> JSON log formatting + request id correlation
 pytest.ini                     -> puts the project root on sys.path so plain `pytest` works
+Dockerfile                     -> container image definition (see Docker section below)
+.dockerignore                  -> keeps venv/, .env, .git, and local DB out of the image
 ```
 
 Routes stay thin: they parse the request, call validation helpers or a
@@ -117,6 +119,7 @@ the bottom-left corner) with this folder as the root.
 - WSL2 with an Ubuntu distribution
 - Python 3.11+ (developed and tested on Python 3.12, inside WSL)
 - `python3-venv` and `python3-pip` (one-time system setup, see below)
+- Docker (for the containerized workflow — see [Docker](#docker) below)
 
 One-time system setup inside WSL, if not already installed:
 
@@ -161,6 +164,8 @@ cp .env.example .env
 | `DATABASE_URL` | `sqlite:///sre_demo.db`     | SQLAlchemy database URL. Point this at Amazon RDS (e.g. `postgresql://...`) in later phases with no code changes. |
 
 Never commit a real `.env` file — it is already excluded via `.gitignore`.
+Inside a container, these are set via `docker run -e ...` instead of a
+`.env` file — see [Docker](#docker) below.
 
 ## Database Setup
 
@@ -184,6 +189,11 @@ useful for watching the app behave in real time and is the format later
 phases will ship to Fluent Bit / ELK.
 
 To stop the server, press `Ctrl+C` in that terminal.
+
+**Note:** `run.py` starts Flask's built-in development server (`debug=True`),
+which is fine for local iteration but is explicitly not meant for
+production or containers — see [Docker](#docker) for how the containerized
+version runs instead (gunicorn).
 
 ## API Endpoints
 
@@ -392,6 +402,117 @@ All 27 tests should pass:
 ======================= 27 passed in 0.5s =======================
 ```
 
+## Docker
+
+The app is containerized via the `Dockerfile` in the project root, and runs
+under **gunicorn** (a production WSGI server) instead of Flask's dev server.
+
+### Dockerfile, in brief
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+VOLUME ["/app/instance"]
+EXPOSE 5000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)" || exit 1
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "3", "--preload", "app:create_app()"]
+```
+
+Key decisions, and why:
+
+- **`gunicorn`, not `python run.py`** — the Flask dev server (`debug=True`)
+  is not safe or robust enough for a container; gunicorn is a standard
+  production WSGI server.
+- **`--workers 3`** — runs 3 worker processes so one slow/stuck request
+  doesn't block all traffic.
+- **`--preload`** — loads the app (and runs `db.create_all()`) **once** in
+  the master process before forking workers. Without this, each of the 3
+  workers independently calls `create_app()` on boot, and they race to
+  create the same database tables — the 2nd and 3rd workers crash with
+  `table users already exists` and the container fails to start. This was
+  a real bug caught by testing with multiple workers; single-worker setups
+  never hit it.
+- **`HEALTHCHECK`** — lets Docker (and later, Kubernetes-style
+  orchestrators) detect a stuck container, independent of your own
+  app-level `/health` route. Implemented with `python -c` + `urllib`
+  rather than `curl`, since the slim base image doesn't include `curl`
+  and this avoids adding it just for this.
+- **`VOLUME ["/app/instance"]`** — declares where SQLite's data file lives
+  inside the container. Without mounting a volume here, data is lost
+  whenever the container is removed (fine for now, since it's disposable
+  local storage — see [Environment Variables](#environment-variables) — but
+  mount a named volume if you want it to survive `docker rm`).
+- **`.dockerignore`** — keeps `venv/`, `.git/`, `.env`, `instance/`, and
+  local `*.db` files out of the built image (same spirit as `.gitignore`).
+
+### Build and run locally
+
+```bash
+cd ~/projects/eks-sre-platform
+docker build -t eks-sre-platform:local .
+
+docker run -d --name eks-sre-platform -p 5000:5000 \
+  -v eks-sre-platform-data:/app/instance \
+  eks-sre-platform:local
+```
+
+Override environment variables at run time instead of baking in a `.env`:
+
+```bash
+docker run -d -p 5000:5000 \
+  -e DATABASE_URL="sqlite:////app/instance/sre_demo.db" \
+  -e FLASK_ENV="production" \
+  eks-sre-platform:local
+```
+
+Check container health and logs:
+
+```bash
+docker ps                                     # STATUS column shows (healthy)/(unhealthy)
+docker inspect --format '{{.State.Health.Status}}' eks-sre-platform
+docker logs eks-sre-platform
+```
+
+### Push to Amazon ECR
+
+```bash
+aws ecr create-repository --repository-name eks-sre-platform --region ap-south-1
+
+aws ecr get-login-password --region ap-south-1 \
+  | docker login --username AWS --password-stdin <account-id>.dkr.ecr.ap-south-1.amazonaws.com
+
+docker tag eks-sre-platform:local <account-id>.dkr.ecr.ap-south-1.amazonaws.com/eks-sre-platform:latest
+docker push <account-id>.dkr.ecr.ap-south-1.amazonaws.com/eks-sre-platform:latest
+```
+
+Prefer tagging with something more specific than `latest` in the long run
+(e.g. a git commit hash) once this moves toward CI/CD, so a given image tag
+always maps to exactly one version of the code.
+
+### Run on an EC2 instance, pulling from ECR
+
+The instance needs an **IAM role** (not stored access keys) with
+`AmazonEC2ContainerRegistryReadOnly` attached, so it can authenticate to
+ECR on its own:
+
+```bash
+aws ecr get-login-password --region ap-south-1 \
+  | sudo docker login --username AWS --password-stdin <account-id>.dkr.ecr.ap-south-1.amazonaws.com
+
+sudo docker pull <account-id>.dkr.ecr.ap-south-1.amazonaws.com/eks-sre-platform:latest
+
+sudo docker run -d --name eks-sre-platform --restart unless-stopped -p 5000:5000 \
+  -v eks-sre-platform-data:/app/instance \
+  <account-id>.dkr.ecr.ap-south-1.amazonaws.com/eks-sre-platform:latest
+```
+
+`--restart unless-stopped` brings the container back automatically if it
+crashes or the instance reboots.
+
 ## Troubleshooting
 
 **"I'm getting 404 on `/users`, `/orders`, or `/`"**
@@ -420,8 +541,14 @@ find . -type d -name "__pycache__" -not -path "./venv/*" -exec rm -rf {} +
 rm -rf .pytest_cache
 ```
 
-## What to Verify Manually Before Moving to Phase 2
+**"Container exits immediately with `table users already exists`"**
+This happens if `--workers` is set to more than 1 **without** `--preload`
+— multiple workers race to run `db.create_all()` at the same time. Make
+sure the gunicorn `CMD` includes `--preload` (see [Docker](#docker) above).
 
+## What to Verify Manually
+
+**Phase 1 (application):**
 1. `python run.py` starts without errors and logs a clean startup line.
 2. `GET /health` returns `200 {"status": "healthy"}`.
 3. `GET /ready` returns `200 {"status": "ready"}` while the DB is reachable.
@@ -437,15 +564,28 @@ rm -rf .pytest_cache
 9. The response for every request includes an `X-Request-ID` header.
 10. `pytest -v` passes all 27 tests locally.
 
-Phase 1 is complete once all of the above are verified — and they have been.
+**Phase 2 (Docker):**
+1. `docker build` completes without errors.
+2. `docker run` starts the container and `docker ps` shows it as `Up`.
+3. After ~35 seconds, `docker inspect --format '{{.State.Health.Status}}'`
+   reports `healthy`.
+4. `curl http://127.0.0.1:5000/health` (or the EC2 public IP) returns
+   `200 {"status": "healthy"}`.
+5. `-e DATABASE_URL=...` and `-e FLASK_ENV=...` passed to `docker run`
+   actually take effect (visible in the startup log line).
+6. Restarting the container with the same named volume mounted preserves
+   previously created data.
+
+Both phases are complete — verified above.
 
 ## Future SRE Extensions
 
-The following are explicitly **out of scope** for Phase 1 and will be added
-in later phases, without requiring a rewrite of this application:
+Status of the full roadmap. Items 1–2 are done; the rest are explicitly
+**out of scope** for now and will be added in later phases, without
+requiring a rewrite of this application:
 
-1. Docker
-2. AWS ECR
+1. ~~Docker~~ ✅ done
+2. ~~AWS ECR~~ ✅ done
 3. Terraform
 4. AWS VPC
 5. EKS
