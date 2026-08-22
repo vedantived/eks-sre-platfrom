@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: flask-app
+  namespace: sre-app
+
+
+spec:
+
+  replicas: 2
+
+  revisionHistoryLimit: 5
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app: flask-app
+
+  template:
+
+    metadata:
+      labels:
+        app: flask-app
+      
+
+    spec:
+
+      serviceAccountName: flask-app-sa
+
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        fsGroup: 1000
+
+      containers:
+
+        - name: flask-app
+
+          # CHANGE THIS
+          image: 464243369696.dkr.ecr.ap-south-1.amazonaws.com/eks-sre-platform
+
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+
+          envFrom:
+
+            - configMapRef:
+                name: flask-app-config
+
+            - secretRef:
+                name: flask-app-secret
+
+          env:
+            - name: PORT
+              value: "5000"
+
+          resources:
+
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          readinessProbe:
+
+            httpGet:
+              path: /
+              port: 5000
+          
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+
+          livenessProbe:
+
+            httpGet:
+              path: /
+              port: 5000
+
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+
+          startupProbe:
+
+            httpGet:
+              path: /
+              port: 5000
+            
+
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+
+          securityContext:
+
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+ś
+          volumeMounts:
+
+            - name: app-instance
+              mountPath: /app/instance
+
+      volumes:
+
+        - name: app-instance
+          emptyDir: {}
