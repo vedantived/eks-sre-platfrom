@@ -130,15 +130,4 @@ resource "aws_route_table_association" "private_app_assoc" {
   route_table_id = aws_route_table.private_app.id
 }
 
-output.tf
-output "vpc_id" {
-  value = aws_vpc.this.id
-}
 
-output "public_subnet_ids" {
-  value = aws_subnet.public[*].id
-}
-
-output "private_subnet_ids" {
-  value = aws_subnet.private_app[*].id
-}}

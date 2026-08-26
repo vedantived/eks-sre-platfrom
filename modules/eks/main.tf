@@ -9,4 +9,5 @@ role_arn = var.cluster_role_arn
     endpoint_public_access  = true
 
     public_access_cidrs = var.allowed_cidrs
-  }}
+  }
+}
