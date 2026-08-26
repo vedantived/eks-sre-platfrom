@@ -29,8 +29,6 @@ tags = merge(
   {
     Name = "${var.project_name}-public-${count.index + 1}"
 
-    "kubernetes.io/role/elb" = "1"                         //Used by Kubernetes → creates public load balancer
-    "kubernetes.io/cluster/eks-zero-trust" = "shared"         //Links subnet to EKS cluster
   }
 )
 }
@@ -49,8 +47,6 @@ tags = merge(
   {
     Name = "${var.project_name}-private-app-${count.index + 1}"
 
-    "kubernetes.io/role/internal-elb" = "1"
-    "kubernetes.io/cluster/sre_cluster" = "shared"
   }
 )
 }
@@ -86,7 +82,6 @@ resource "aws_nat_gateway" "nat" {
     Name = "${var.project_name}-nat"
   }
 
-  depends_on = [aws_internet_gateway.igw]        //Ensure IGW created first
 }
 
 // Public Route Table
@@ -134,3 +129,16 @@ resource "aws_route_table_association" "private_app_assoc" {
   subnet_id      = aws_subnet.private_app[count.index].id
   route_table_id = aws_route_table.private_app.id
 }
+
+output.tf
+output "vpc_id" {
+  value = aws_vpc.this.id
+}
+
+output "public_subnet_ids" {
+  value = aws_subnet.public[*].id
+}
+
+output "private_subnet_ids" {
+  value = aws_subnet.private_app[*].id
+}}
