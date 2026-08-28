@@ -6,15 +6,16 @@ metadata:
   namespace: sre-app
 
   annotations:
-    nginx.org/redirect-to-https: "false"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
 
 spec:
-  ingressClassName: nginx
+  ingressClassName: alb
 
   rules:
     - http:
         paths:
-
           - path: /
             pathType: Prefix
 
