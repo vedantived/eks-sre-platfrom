@@ -115,7 +115,7 @@ spec:
             capabilities:
               drop:
                 - ALL
-ś
+
           volumeMounts:
 
             - name: app-instance

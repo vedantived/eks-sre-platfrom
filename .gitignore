@@ -10,19 +10,27 @@ venv/
 env/
 
 # Environment variables
-.env
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Editors / OS
+.env/
 .vscode/
 .idea/
 .DS_Store
+
+# Terraform working directory
+.terraform/
+**/.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+terraform.tfstate
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform lock file
+# Keep this file in Git for consistent provider versions
+!.terraform.lock.hcl
+
+# Local cache
+.cache/

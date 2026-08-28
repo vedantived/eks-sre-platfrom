@@ -6,7 +6,7 @@ module "vpc" {
   public_subnet_cidrs      = var.public_subnet_cidrs
   private_app_subnet_cidrs = var.private_app_subnet_cidrs
 
-  common_tags              = var.common_tags
+  common_tags = var.common_tags
 }
 
 
@@ -15,8 +15,8 @@ module "vpc" {
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name = "eks-sre"
-cluster_role_arn = aws_iam_role.eks_cluster_role.arn
+  cluster_name     = "eks-sre"
+  cluster_role_arn = aws_iam_role.eks_cluster_role.arn
 
   subnet_ids = concat(
     module.vpc.private_subnet_ids,
@@ -25,8 +25,8 @@ cluster_role_arn = aws_iam_role.eks_cluster_role.arn
 
 
   allowed_cidrs = [
-  "0.0.0.0/0"
-]
+    "0.0.0.0/0"
+  ]
 
   tags = {
     Environment = "dev"
@@ -39,7 +39,7 @@ cluster_role_arn = aws_iam_role.eks_cluster_role.arn
 resource "aws_eks_node_group" "this" {
   cluster_name    = module.eks.cluster_name
   node_group_name = "eks-node-group"
- node_role_arn   = aws_iam_role.eks_node_role.arn
+  node_role_arn   = aws_iam_role.eks_node_role.arn
 
   subnet_ids = module.vpc.private_subnet_ids
 
@@ -50,7 +50,7 @@ resource "aws_eks_node_group" "this" {
   }
 
   instance_types = ["t2.large"]
-  capacity_type = "ON_DEMAND"
+  capacity_type  = "ON_DEMAND"
 
   tags = {
     Name        = "eks-node"

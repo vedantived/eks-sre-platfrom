@@ -1,6 +1,6 @@
 project_name = "Eks_Sre"
 aws_region   = "ap-south-1"
-app_port     = 3000
+app_port     = 5000
 
 
 vpc_cidr = "12.0.0.0/16"
@@ -21,4 +21,4 @@ max_size         = 4
 
 common_tags = {
   Environment = "dev"
-  Project     = "EKS-Sre"}
+Project = "EKS-Sre" }
