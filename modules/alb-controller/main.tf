@@ -12,7 +12,8 @@ data "aws_eks_cluster" "this" {
 # ============================================================
 
 data "tls_certificate" "eks_oidc" {
-  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
+
+  url = var.oidc_issuer_url
 }
 
 
@@ -22,7 +23,7 @@ data "tls_certificate" "eks_oidc" {
 
 resource "aws_iam_openid_connect_provider" "eks" {
 
-  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
+  url = var.oidc_issuer_url
 
   client_id_list = [
     "sts.amazonaws.com"
@@ -38,7 +39,6 @@ resource "aws_iam_openid_connect_provider" "eks" {
     ManagedBy   = "Terraform"
   }
 }
-
 
 # ============================================================
 # IRSA TRUST POLICY
