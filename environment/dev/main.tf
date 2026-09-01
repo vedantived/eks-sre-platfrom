@@ -58,3 +58,25 @@ resource "aws_eks_node_group" "this" {
   }
 }
 
+
+# ============================================================
+# AWS LOAD BALANCER CONTROLLER
+# ============================================================
+
+module "alb_controller" {
+
+  source = "../../modules/alb-controller"
+
+  cluster_name = module.eks.cluster_name
+
+  vpc_id = module.vpc.vpc_id
+
+  aws_region = var.aws_region
+
+  environment = "dev"
+
+  depends_on = [
+    module.eks
+  ]
+}
+
