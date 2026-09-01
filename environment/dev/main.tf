@@ -69,6 +69,8 @@ module "alb_controller" {
 
   cluster_name = module.eks.cluster_name
 
+oidc_issuer_url = module.eks.oidc_issuer_url
+
   vpc_id = module.vpc.vpc_id
 
   aws_region = var.aws_region
