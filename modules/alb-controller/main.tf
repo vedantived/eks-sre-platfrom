@@ -1,11 +1,3 @@
-# ============================================================
-# DATA - EXISTING EKS CLUSTER
-# ============================================================
-
-data "aws_eks_cluster" "this" {
-  name = var.cluster_name
-}
-
 
 # ============================================================
 # TLS CERTIFICATE FOR EKS OIDC
@@ -67,11 +59,11 @@ data "aws_iam_policy_document" "alb_controller_assume_role" {
 
       test = "StringEquals"
 
-      variable = "${replace(
-        data.aws_eks_cluster.this.identity[0].oidc[0].issuer,
-        "https://",
-        ""
-      )}:aud"
+     variable = "${replace(
+  var.oidc_issuer_url,
+  "https://",
+  ""
+)}:aud"
 
       values = [
         "sts.amazonaws.com"
@@ -82,11 +74,11 @@ data "aws_iam_policy_document" "alb_controller_assume_role" {
 
       test = "StringEquals"
 
-      variable = "${replace(
-        data.aws_eks_cluster.this.identity[0].oidc[0].issuer,
-        "https://",
-        ""
-      )}:sub"
+     variable = "${replace(
+  var.oidc_issuer_url,
+  "https://",
+  ""
+)}:sub"
 
       values = [
         "system:serviceaccount:kube-system:aws-load-balancer-controller"
